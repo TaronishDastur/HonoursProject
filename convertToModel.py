@@ -1,59 +1,118 @@
-import vtkplotter as vtk
+import open3d as o3d
 import numpy as np
 
+# pcd_load = o3d.io.read_point_cloud("chair.ply")
 
-# vp = Plotter(N=4, axes=0, bg='w')
+# remove outliers
+def display_inlier_outlier(cloud, ind):
+    inlier_cloud = cloud.select_down_sample(ind)
+    outlier_cloud = cloud.select_down_sample(ind, invert=True)
 
-reader = vtk.vtkPLYReader()
-reader.SetFileName(filename)
-reader.Update()
+    print("Showing outliers (red) and inliers (gray): ")
+    outlier_cloud.paint_uniform_color([1, 0, 0])
+    inlier_cloud.paint_uniform_color([0.8, 0.8, 0.8])
+    # o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud])
 
-'''
-act = vp.load(datadir+"mergedPcl.pcl")
-vp.show(act, at=0)
 
-noise = np.random.randn(act.N(), 3) * 0.04
 
-pts0 = Points(act.getPoints() + noise, r=3).legend("noisy cloud")
-vp.show(pts0, at=1)
+# load the point cloud file and convert it to np array
+pcd = o3d.io.read_point_cloud("chair.ply")
+xyzList = np.asarray(pcd.points)
+print(xyzList.shape)
 
-pts1 = smoothMLS2D(pts0, f=0.4)  # smooth cloud, input actor is modified
+print('Read point cloud and reduce size')
+# for i,e in enumerate(xyzList):
+for i in range(len(xyzList)):
+	e = xyzList[i]
+	# print(e)
+	e = np.rint(e) / 10000
+	# print(e)
+	xyzList[i] = e 
 
-print("Nr of points before cleaning polydata:", pts1.N())
+xyzList = np.unique(xyzList, axis=0)
+print(xyzList.shape)
 
-# impose a min distance among mesh points
-pts1.clean(tol=0.01).legend("smooth cloud")
-print("             after  cleaning polydata:", pts1.N())
 
-vp.show(pts1, at=2)
+# find the max X,Y,Z value  --> that is the floor
 
-# reconstructed surface from point cloud
-reco = recoSurface(pts1, bins=128).legend("surf reco")
-vp.show(reco, at=3, axes=7, zoom=1.2, interactive=1)
+xVar = {}
+yVar = {}
+zVar = {}
+for x in xyzList:
+	elX = x[0]
+	elY = x[2]
+	elZ = x[1]
+	if (elX in xVar):
+		xVar[elX] = xVar[elX] +1
+	else: 
+		xVar[elX] = 1
 
-'''
-'''
-reader = vtk.vtkPLYReader()
-reader.SetFileName(filename)
-reader.Update()
+	if elY in yVar:
+		yVar[elY] = yVar[elY] +1
+	else:
+		yVar[elY] = 1
 
-mapper = vtk.vtkPolyDataMapper()
-mapper.SetInputConnection(reader.GetOutputPort())
 
-actor = vtk.vtkActor()
-actor.SetMapper(mapper)
+	if elZ in zVar:
+		zVar[elZ] = zVar[elZ] +1
+	else:
+		zVar[elZ] = 1		
 
-renderer = vtk.vtkRenderer()
-renderWindow = vtk.vtkRenderWindow()
-renderWindow.AddRenderer(renderer)
-renderWindowInteractor = vtk.vtkRenderWindowInteractor()
-renderWindowInteractor.SetRenderWindow(renderWindow)
+vx=list(xVar.values())
+kx=list(xVar.keys())
+maxX =  kx[vx.index(max(vx))]
 
-renderer.AddActor(actor)
-renderer.SetBackground(.3, .6, .3)   #Background color green
+vy=list(yVar.values())
+ky=list(yVar.keys())
+maxY =  ky[vy.index(max(vy))]
 
-renderWindow.Render()
-renderWindowInteractor.Start()
-'''
+vz=list(zVar.values())
+kz=list(zVar.keys())
+maxZ =  kz[vz.index(max(vz))]
 
-# https://github.com/marcomusy/vtkplotter/blob/master/LICENSE
+
+# remove all elements around the floor 
+reducedList = []
+for i,x in enumerate(xyzList):
+	# if (x[2] > maxY):
+	# 	reducedList.append(x)
+	if (x[1] > maxZ):
+		reducedList.append(x)
+	# if (x[0] > maxZ):
+	# 	reducedList.append(x)			
+	# if (x[0] > maxY+ 5.0):
+	# 	# x =np.reshape(np.transpose(x), (1, 3))
+	# reducedList.append(x)
+
+
+# bring the y axis to the ground
+mn = 100000
+for x in (reducedList):
+	if (x[1] < mn):
+		mn = x[1]
+
+for i, x in enumerate(reducedList):
+	reducedList[i][1] = reducedList[i][1] - mn
+
+
+
+reducedList = np.array(reducedList)
+print(reducedList.shape)
+
+
+# convert the modified vectors to a point cloud 
+pcd.points = o3d.utility.Vector3dVector(reducedList)
+
+# remove the outliers around a radius 
+pcd = pcd.voxel_down_sample(voxel_size=3)
+o3d.visualization.draw_geometries([pcd])
+
+uni_down_pcd = pcd.uniform_down_sample(every_k_points=5)
+cl, ind = pcd.remove_statistical_outlier(nb_neighbors=20,
+                                                    std_ratio=0.5)
+o3d.visualization.draw_geometries([cl])
+
+# convert the point cloud back to vector 
+newList = np.asarray(cl.points)
+print(newList.shape)
+np.savetxt("QbiQ/game.txt", newList, fmt='%d', delimiter=' ', newline='\n')

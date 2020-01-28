@@ -1,31 +1,28 @@
 import open3d as o3d
 import numpy as np
+import math
+from scipy.spatial import KDTree
 
-# pcd_load = o3d.io.read_point_cloud("chair.ply")
-
-# remove outliers
-def display_inlier_outlier(cloud, ind):
-    inlier_cloud = cloud.select_down_sample(ind)
-    outlier_cloud = cloud.select_down_sample(ind, invert=True)
-
-    print("Showing outliers (red) and inliers (gray): ")
-    outlier_cloud.paint_uniform_color([1, 0, 0])
-    inlier_cloud.paint_uniform_color([0.8, 0.8, 0.8])
-    # o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud])
+# ----------------------------------------------------#
+# ---Modify the point cloud for Cube representation---#
+# ----------------------------------------------------#
 
 
+readFileName = "PointClouds/game1.ply"
+saveFileName = "QbiQ/test.txt"
 
 # load the point cloud file and convert it to np array
-pcd = o3d.io.read_point_cloud("chair.ply")
-xyzList = np.asarray(pcd.points)
+ply = o3d.io.read_point_cloud(readFileName)
+xyzList = np.asarray(ply.points)
 print(xyzList.shape)
 
 print('Read point cloud and reduce size')
 # for i,e in enumerate(xyzList):
 for i in range(len(xyzList)):
 	e = xyzList[i]
-	# print(e)
-	e = np.rint(e) / 10000
+	# plant --> 200000
+	# box --> 10000
+	e = np.absolute(np.rint(e / 10000))
 	# print(e)
 	xyzList[i] = e 
 
@@ -33,86 +30,125 @@ xyzList = np.unique(xyzList, axis=0)
 print(xyzList.shape)
 
 
-# find the max X,Y,Z value  --> that is the floor
+# Transpose the list so the x,y,z planes are in individual rows
+xyzListT = np.transpose(xyzList)
+xList = xyzListT[0]
+yList = xyzListT[1]
+zList = xyzListT[2]
 
-xVar = {}
-yVar = {}
-zVar = {}
-for x in xyzList:
-	elX = x[0]
-	elY = x[2]
-	elZ = x[1]
-	if (elX in xVar):
-		xVar[elX] = xVar[elX] +1
-	else: 
-		xVar[elX] = 1
+# Find maximum x, y, z values
+xDict = {}
+yDict = {}
+zDict = {}
 
-	if elY in yVar:
-		yVar[elY] = yVar[elY] +1
+for e in xyzList:
+	if e[0] in xDict: 
+		xDict[e[0]] += 1
 	else:
-		yVar[elY] = 1
+		xDict[e[0]] = 1
 
-
-	if elZ in zVar:
-		zVar[elZ] = zVar[elZ] +1
+	if e[1] in yDict: 
+		yDict[e[1]] += 1
 	else:
-		zVar[elZ] = 1		
+		yDict[e[1]] = 1
 
-vx=list(xVar.values())
-kx=list(xVar.keys())
-maxX =  kx[vx.index(max(vx))]
+	if e[2] in zDict: 
+		zDict[e[2]] += 1
+	else:
+		zDict[e[2]] = 1		
 
-vy=list(yVar.values())
-ky=list(yVar.keys())
-maxY =  ky[vy.index(max(vy))]
-
-vz=list(zVar.values())
-kz=list(zVar.keys())
-maxZ =  kz[vz.index(max(vz))]
+maxAtX = list(xDict.keys())[list(xDict.values()).index(max(xDict.values()))]
+maxAtY = list(yDict.keys())[list(yDict.values()).index(max(yDict.values()))]
+maxAtZ = list(zDict.keys())[list(zDict.values()).index(max(zDict.values()))]
 
 
-# remove all elements around the floor 
+	
+# remove elements at where the floor is i.e. max y count --> remove elements in the x,y plane
+# Note: Modify as needed by the Model to remove maximum possible points 
 reducedList = []
-for i,x in enumerate(xyzList):
-	# if (x[2] > maxY):
-	# 	reducedList.append(x)
-	if (x[1] > maxZ):
-		reducedList.append(x)
-	# if (x[0] > maxZ):
-	# 	reducedList.append(x)			
-	# if (x[0] > maxY+ 5.0):
-	# 	# x =np.reshape(np.transpose(x), (1, 3))
-	# reducedList.append(x)
+for e in xyzList:
+	if (e[2] > maxAtZ ):
+		reducedList.append(e)
 
-
-# bring the y axis to the ground
-mn = 100000
-for x in (reducedList):
-	if (x[1] < mn):
-		mn = x[1]
-
-for i, x in enumerate(reducedList):
-	reducedList[i][1] = reducedList[i][1] - mn
-
+	if (reducedList[-1][1] < maxAtY +5  ):
+		reducedList.pop(-1)
 
 
 reducedList = np.array(reducedList)
 print(reducedList.shape)
 
-
 # convert the modified vectors to a point cloud 
-pcd.points = o3d.utility.Vector3dVector(reducedList)
+ply.points = o3d.utility.Vector3dVector(reducedList)
 
 # remove the outliers around a radius 
-pcd = pcd.voxel_down_sample(voxel_size=3)
-o3d.visualization.draw_geometries([pcd])
+ply = ply.voxel_down_sample(voxel_size=3)
+o3d.visualization.draw_geometries([ply])
 
-uni_down_pcd = pcd.uniform_down_sample(every_k_points=5)
-cl, ind = pcd.remove_statistical_outlier(nb_neighbors=20,
+uni_down_ply = ply.uniform_down_sample(every_k_points=5)
+cl, ind = ply.remove_statistical_outlier(nb_neighbors=20,
                                                     std_ratio=0.5)
 o3d.visualization.draw_geometries([cl])
 
 # convert the point cloud back to vector 
-newList = np.asarray(cl.points)
+reducedList = np.asarray(cl.points)
+
+
+# bring the axis to the ground and center model
+newListT = np.transpose(reducedList)
+minX = int(min(newListT[0]))
+minY = int(min(newListT[1]))
+minZ = int(min(newListT[2]))
+
+for i, x in enumerate(reducedList):
+	reducedList[i][1] -= minY
+	reducedList[i][0] -= minX
+	reducedList[i][2] -= minZ
+
+
+# find the 10 closest points to each point and create a path to it
+# for e in reducedList:
+newList = []
+for i,p1 in enumerate(reducedList):
+# for i in range (2):
+	# p1 = reducedList[i]
+	kdtree=KDTree(reducedList)
+	dist,points=kdtree.query(p1, 10)
+	for p in range (9):
+		p2 = reducedList[points[p+1]]
+		x, y, z = p1
+
+		# loop though the list and find the nearest neighbours in each direction
+		for x in range(int(p1[0]), int(p2[0])):
+			newList.append([x, y, z])
+		for y in range(int(p1[1]), int(p2[1])):
+			newList.append([x, y, z])
+		for z in range(int(p1[2]), int(p2[2])):
+			newList.append([x, y, z])
+
+newList = np.array(newList)
+newList = np.unique(newList, axis=0)
+
+
+# remove floating points by adding points to the ground if needed
+newList2 = []
+for p1 in newList:
+	pointBelow = False
+	pointAttached = False
+	for p2 in newList:
+		if (int(p2[0]) == int(p1[0]) and int(p2[2]) == int(p1[2]) and p2[1] < p1[1]):
+			pointBelow = True
+		if ((int(p2[0]) == int(p1[0])-1) or (int(p2[0]) == int(p1[0])+1) or (int(p2[2]) == int(p1[2])-1) or (int(p2[2]) == int(p1[2])+1)):
+			pointAttached == True
+	# add a point to the ground from every point if there is no point below int
+	if (pointBelow == False and pointAttached == False):
+		for j in range (int(p1[1])):
+			newList2.append([p1[0], j, p1[2]])
+
+np.append(newList, newList2, axis = 0)
+
+newList = np.unique(newList, axis=0)
+
+
+# Save the list as a text file
 print(newList.shape)
-np.savetxt("QbiQ/game.txt", newList, fmt='%d', delimiter=' ', newline='\n')
+np.savetxt(saveFileName, newList, fmt='%d', delimiter=' ', newline='\n')
